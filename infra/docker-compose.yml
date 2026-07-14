@@ -1,0 +1,34 @@
+services:
+  postgres:
+    # pgvector image ships Postgres 16 + the vector extension preinstalled.
+    image: pgvector/pgvector:pg16
+    container_name: chatty-postgres
+    environment:
+      POSTGRES_USER: chatty
+      POSTGRES_PASSWORD: chatty
+      POSTGRES_DB: chatty
+    ports:
+      # Host 5433 -> container 5432 to avoid clashing with a local Postgres.
+      - "5433:5432"
+    volumes:
+      - chatty-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatty -d chatty"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: chatty-redis
+    ports:
+      - "6380:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  chatty-pgdata:
