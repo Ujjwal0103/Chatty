@@ -1,0 +1,15 @@
+{
+  "name": "@chatty/eval",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval": "tsx src/runner.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chatty/planner": "workspace:*",
+    "@chatty/semantic-layer": "workspace:*",
+    "@chatty/shared": "workspace:*"
+  }
+}

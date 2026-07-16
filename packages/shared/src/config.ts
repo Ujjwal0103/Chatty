@@ -31,8 +31,8 @@ export const config = {
 
   stripeSecretKey: env("STRIPE_SECRET_KEY", ""),
 
-  /** Dataset reference "today" — the seed spans H1 2025. */
-  datasetAsOf: env("DATASET_AS_OF", "2025-07-01"),
+  /** Dataset reference "today" — the seed spans H1 2025; land inside June's period. */
+  datasetAsOf: env("DATASET_AS_OF", "2025-06-30"),
 } as const;
 
 export type Config = typeof config;

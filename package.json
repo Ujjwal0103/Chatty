@@ -13,7 +13,7 @@
     "test": "pnpm -r test",
     "db:migrate": "pnpm --filter @chatty/db migrate",
     "db:seed": "pnpm --filter @chatty/db seed",
-    "eval": "pnpm --filter @chatty/eval run",
+    "eval": "pnpm --filter @chatty/eval eval",
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "validator": "python -m uvicorn validator.app:app --app-dir packages/validator --host 127.0.0.1 --port 7070",

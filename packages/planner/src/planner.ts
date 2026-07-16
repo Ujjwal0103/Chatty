@@ -70,7 +70,7 @@ export async function plan(question: string): Promise<PlanResult> {
     thinking: { type: "adaptive" },
     system: systemPrompt(renderCatalog(retrieved)),
     messages: [{ role: "user", content: question }],
-    output_config: { format: zodOutputFormat(PlanSchema, "query_plan") },
+    output_config: { format: zodOutputFormat(PlanSchema) },
   });
 
   const rawPlan = response.parsed_output;
