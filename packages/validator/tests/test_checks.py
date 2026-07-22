@@ -62,6 +62,15 @@ def test_clamps_oversized_limit():
     assert "LIMIT 100" in r.safe_sql
 
 
+def test_table_allowlist_rejects_unknown_table():
+    allowed = ["app.users", "app.services"]
+    ok = validate("SELECT count(*) AS value FROM app.users", ["app"], 5000, allowed)
+    assert ok.ok, ok.violations
+    bad = validate("SELECT count(*) AS value FROM app.invoices", ["app"], 5000, allowed)
+    assert not bad.ok
+    assert any("table_not_in_schema" in v for v in bad.violations)
+
+
 def test_fingerprint_ignores_literal_values():
     a = v("SELECT id FROM warehouse.customers WHERE id = 'a'")
     b = v("SELECT id FROM warehouse.customers WHERE id = 'b'")

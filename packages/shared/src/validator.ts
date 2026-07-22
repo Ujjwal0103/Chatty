@@ -7,6 +7,8 @@ import type { ValidationResult } from "./types.js";
 export interface ValidateOptions {
   allowedSchemas?: string[];
   maxRows?: number;
+  /** Exact schema.table allowlist; when set, tables outside it fail closed. */
+  allowedTables?: string[];
 }
 
 interface ValidatorResponse {
@@ -24,6 +26,7 @@ export async function validateSql(sql: string, opts: ValidateOptions = {}): Prom
       sql,
       allowed_schemas: opts.allowedSchemas ?? ["warehouse"],
       max_rows: opts.maxRows ?? config.rowLimit,
+      allowed_tables: opts.allowedTables ?? null,
     }),
   });
   if (!res.ok) {

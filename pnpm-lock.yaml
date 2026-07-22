@@ -23,6 +23,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@chatty/connectors':
+        specifier: workspace:*
+        version: link:../../packages/connectors
       '@chatty/planner':
         specifier: workspace:*
         version: link:../../packages/planner
@@ -41,7 +44,13 @@ importers:
       ioredis:
         specifier: ^5.4.1
         version: 5.11.1
+      pg:
+        specifier: ^8.13.0
+        version: 8.22.0
     devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
       tsx:
         specifier: ^4.19.0
         version: 4.23.0

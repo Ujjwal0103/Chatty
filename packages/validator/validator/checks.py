@@ -73,8 +73,17 @@ def _referenced_tables(tree: exp.Expression) -> list[exp.Table]:
     return tables
 
 
-def validate(sql: str, allowed_schemas: list[str], max_rows: int) -> ValidationResult:
+def validate(
+    sql: str,
+    allowed_schemas: list[str],
+    max_rows: int,
+    allowed_tables: list[str] | None = None,
+) -> ValidationResult:
     violations: list[str] = []
+    # Optional exact table allowlist (schema.table, lowercased). Used by the generic
+    # BYO-Postgres path so freeform SQL that references a hallucinated table fails
+    # closed instead of erroring at execution. None = skip (curated finance path).
+    allowed_table_set = {t.lower() for t in allowed_tables} if allowed_tables is not None else None
 
     try:
         statements = sqlglot.parse(sql, dialect="postgres")
@@ -108,8 +117,11 @@ def validate(sql: str, allowed_schemas: list[str], max_rows: int) -> ValidationR
         schema = (tbl.db or "").lower()
         if schema == "":
             violations.append(f"unqualified_table_forbidden: {tbl.name}")
-        elif schema not in allowed:
+            continue
+        if schema not in allowed:
             violations.append(f"table_not_allowed: {schema}.{tbl.name}")
+        elif allowed_table_set is not None and f"{schema}.{tbl.name}".lower() not in allowed_table_set:
+            violations.append(f"table_not_in_schema: {schema}.{tbl.name}")
 
     # 5. Dangerous functions.
     for fn in tree.find_all(exp.Anonymous):

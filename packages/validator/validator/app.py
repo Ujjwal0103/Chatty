@@ -13,6 +13,7 @@ class ValidateRequest(BaseModel):
     sql: str
     allowed_schemas: List[str] = Field(default_factory=lambda: ["warehouse"])
     max_rows: int = 5000
+    allowed_tables: Optional[List[str]] = None
 
 
 class ValidateResponse(BaseModel):
@@ -29,7 +30,7 @@ def health() -> Dict[str, str]:
 
 @app.post("/validate", response_model=ValidateResponse)
 def validate_sql(req: ValidateRequest) -> ValidateResponse:
-    result = validate(req.sql, req.allowed_schemas, req.max_rows)
+    result = validate(req.sql, req.allowed_schemas, req.max_rows, req.allowed_tables)
     return ValidateResponse(
         ok=result.ok,
         fingerprint=result.fingerprint,

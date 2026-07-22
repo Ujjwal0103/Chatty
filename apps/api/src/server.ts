@@ -3,6 +3,7 @@ import { catalogDimensions, catalogMetrics } from "@chatty/semantic-layer";
 import { closePools, rwPool } from "@chatty/shared";
 import Fastify from "fastify";
 import { answer } from "./engine.js";
+import { answerGeneric, type DbConnection } from "./generic.js";
 import { closeRedis } from "./redis.js";
 
 const PORT = Number(process.env.API_PORT ?? 8787);
@@ -19,10 +20,14 @@ app.get("/metrics", async () => ({
 }));
 
 app.get("/connections", async () => {
-  const { rows } = await rwPool().query(
+  // `mode` tells the UI which engine a source uses: curated finance metrics vs
+  // generic freeform SQL. `config` (which may hold secrets) is never returned.
+  const { rows } = await rwPool().query<{ kind: string }>(
     `SELECT id, kind, display_name, created_at, last_synced_at FROM connections ORDER BY created_at`,
   );
-  return { connections: rows };
+  return {
+    connections: rows.map((r) => ({ ...r, mode: r.kind === "postgres" ? "generic" : "finance" })),
+  };
 });
 
 app.get("/history", async () => {
@@ -33,9 +38,26 @@ app.get("/history", async () => {
   return { history: rows };
 });
 
-// Ask a question — streams pipeline stages over SSE.
-app.post<{ Body: { question?: string } }>("/ask", async (req, reply) => {
+interface ConnectionRow {
+  id: string;
+  kind: string;
+  config: { schema?: string; connectionString?: string };
+  display_name: string;
+}
+
+async function loadConnection(id: string): Promise<ConnectionRow | undefined> {
+  const { rows } = await rwPool().query<ConnectionRow>(
+    `SELECT id, kind, config, display_name FROM connections WHERE id = $1`,
+    [id],
+  );
+  return rows[0];
+}
+
+// Ask a question — routes to the curated finance engine or the generic BYO-Postgres
+// engine based on the selected connection, and streams pipeline stages over SSE.
+app.post<{ Body: { question?: string; connectionId?: string } }>("/ask", async (req, reply) => {
   const question = (req.body?.question ?? "").trim();
+  const connectionId = req.body?.connectionId;
   // Take over the raw socket so Fastify doesn't send its own response and race
   // our SSE writes.
   reply.hijack();
@@ -62,7 +84,21 @@ app.post<{ Body: { question?: string } }>("/ask", async (req, reply) => {
     closed = true;
   });
 
-  for await (const stage of answer(question)) {
+  let stream;
+  if (connectionId) {
+    const conn = await loadConnection(connectionId);
+    if (!conn) {
+      send({ stage: "error", message: "Unknown connection." });
+      reply.raw.end();
+      return;
+    }
+    const dbConn: DbConnection = { id: conn.id, displayName: conn.display_name, config: conn.config };
+    stream = conn.kind === "postgres" ? answerGeneric(question, dbConn) : answer(question);
+  } else {
+    stream = answer(question);
+  }
+
+  for await (const stage of stream) {
     if (closed) break;
     send(stage);
   }
