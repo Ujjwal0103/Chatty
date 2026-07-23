@@ -55,3 +55,15 @@ export interface CatalogMetric {
   grain: string;
   supportedDimensions: string[];
 }
+
+export interface Connection {
+  id: string;
+  kind: string;
+  display_name: string;
+  mode: "finance" | "generic";
+}
+
+export interface SchemaInfo {
+  schemaName: string | null;
+  tables: Array<{ name: string; columns: string[] }>;
+}

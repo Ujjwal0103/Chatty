@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { askStream, fetchMetrics } from "../lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { askStream, fetchConnections, fetchMetrics, fetchSchema } from "../lib/api";
 import { formatValue, metricLabel } from "../lib/format";
-import type { AnswerEnvelope, CatalogMetric, Stage } from "../lib/types";
+import type { AnswerEnvelope, CatalogMetric, Connection, SchemaInfo, Stage } from "../lib/types";
 import { ProvenanceCard } from "../components/ProvenanceCard";
 
 interface Turn {
@@ -16,11 +16,18 @@ interface Turn {
   running: boolean;
 }
 
-const SUGGESTIONS = [
+const FINANCE_SUGGESTIONS = [
   "What was our MRR at the end of H1 2025?",
   "What was net revenue retention over H1 2025?",
   "How much new MRR did we add in Q2 2025?",
   "How many active subscriptions did we have as of June 30, 2025?",
+];
+
+const COMPANY_SUGGESTIONS = [
+  "How many users do we have?",
+  "How many active users are on the Analytics service?",
+  "How many users are on each service?",
+  "How many users signed up in 2025?",
 ];
 
 const STAGE_ORDER = ["planning", "planned", "compiled", "validated", "cache", "result", "done"];
@@ -31,6 +38,7 @@ function Answer({ turn }: { turn: Turn }) {
 
   const { result, provenance } = turn.envelope;
   const metricKey = provenance.metrics[0]?.key ?? turn.metric ?? "";
+  const label = metricKey === "sql" ? "Result" : metricLabel(metricKey);
   const scalar =
     result.rows.length === 1 && "value" in (result.rows[0] ?? {}) ? result.rows[0]!.value : undefined;
 
@@ -38,7 +46,7 @@ function Answer({ turn }: { turn: Turn }) {
     <>
       {scalar !== undefined ? (
         <div className="headline">
-          <span className="lbl">{metricLabel(metricKey)}</span>
+          <span className="lbl">{label}</span>
           {formatValue(metricKey, scalar)}
         </div>
       ) : (
@@ -69,15 +77,35 @@ function Answer({ turn }: { turn: Turn }) {
 }
 
 export default function Page() {
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [activeId, setActiveId] = useState<string>("");
   const [metrics, setMetrics] = useState<CatalogMetric[]>([]);
+  const [schema, setSchema] = useState<SchemaInfo | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
 
+  const active = useMemo(() => connections.find((c) => c.id === activeId), [connections, activeId]);
+  const isGeneric = active?.mode === "generic";
+
   useEffect(() => {
     fetchMetrics().then(setMetrics).catch(() => setMetrics([]));
+    fetchConnections()
+      .then((c) => {
+        setConnections(c);
+        if (c.length > 0) setActiveId(c[0]!.id);
+      })
+      .catch(() => setConnections([]));
   }, []);
+
+  useEffect(() => {
+    if (active?.mode === "generic") {
+      fetchSchema(active.id).then(setSchema).catch(() => setSchema(null));
+    } else {
+      setSchema(null);
+    }
+  }, [active]);
 
   useEffect(() => {
     streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: "smooth" });
@@ -95,7 +123,7 @@ export default function Page() {
       setTurns((all) => all.map((t, i) => (i === index ? fn(t) : t)));
 
     try {
-      for await (const s of askStream(q)) {
+      for await (const s of askStream(q, activeId)) {
         applyStage(update, s);
       }
     } catch (err) {
@@ -106,35 +134,72 @@ export default function Page() {
     }
   }
 
+  const suggestions = isGeneric ? COMPANY_SUGGESTIONS : FINANCE_SUGGESTIONS;
+
   return (
     <div className="layout">
       <aside className="sidebar">
         <div className="brand">
           Chatty
-          <small>Correctness-first finance analyst</small>
+          <small>Ask your finance & product data</small>
         </div>
-        <div className="section-title">Metrics ({metrics.length})</div>
-        {metrics.map((m) => (
-          <div className="metric-item" key={m.key}>
-            <div className="k">{m.key}</div>
-            <div className="d">{m.description}</div>
-            <span className="g">{m.grain}</span>
-          </div>
+
+        <div className="section-title">Sources</div>
+        {connections.map((c) => (
+          <button
+            key={c.id}
+            className={`source ${c.id === activeId ? "active" : ""}`}
+            onClick={() => setActiveId(c.id)}
+          >
+            <span className="name">{c.display_name}</span>
+            <span className={`mode ${c.mode}`}>{c.mode === "finance" ? "metrics" : "SQL"}</span>
+          </button>
         ))}
+
+        {isGeneric ? (
+          <>
+            <div className="section-title">Tables{schema?.schemaName ? ` · ${schema.schemaName}` : ""}</div>
+            {(schema?.tables ?? []).map((t) => (
+              <div className="metric-item" key={t.name}>
+                <div className="k">{t.name}</div>
+                <div className="d">{t.columns.join(", ")}</div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <>
+            <div className="section-title">Metrics ({metrics.length})</div>
+            {metrics.map((m) => (
+              <div className="metric-item" key={m.key}>
+                <div className="k">{m.key}</div>
+                <div className="d">{m.description}</div>
+                <span className="g">{m.grain}</span>
+              </div>
+            ))}
+          </>
+        )}
       </aside>
 
       <main className="main">
         <div className="header">
-          <h1>Ask your finance data</h1>
-          <p>Every answer is planned over a semantic layer, executed as validated read-only SQL, and shown with its provenance.</p>
+          <h1>{isGeneric ? `Ask ${active?.display_name}` : "Ask your finance data"}</h1>
+          <p>
+            {isGeneric
+              ? "Plain-English questions become validated, read-only SQL over your schema — shown with the exact query."
+              : "Every answer is planned over a semantic layer, executed as validated read-only SQL, and shown with its provenance."}
+          </p>
         </div>
 
         <div className="stream" ref={streamRef}>
           {turns.length === 0 ? (
             <div className="empty">
-              <p>Ask a question about MRR, ARR, retention, churn, revenue, or subscriptions over the H1 2025 dataset.</p>
+              <p>
+                {isGeneric
+                  ? "Ask about users, accounts, services, subscriptions, or usage in the company database."
+                  : "Ask about MRR, ARR, retention, churn, revenue, or subscriptions over the H1 2025 dataset."}
+              </p>
               <div className="suggestions">
-                {SUGGESTIONS.map((s) => (
+                {suggestions.map((s) => (
                   <button className="suggestion" key={s} onClick={() => ask(s)}>
                     {s}
                   </button>
@@ -170,7 +235,7 @@ export default function Page() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="e.g. What was our gross revenue retention over H1 2025?"
+            placeholder={isGeneric ? "e.g. How many users are on the Search service?" : "e.g. What was our gross revenue retention over H1 2025?"}
             disabled={busy}
           />
           <button type="submit" disabled={busy || !input.trim()}>

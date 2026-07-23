@@ -1,13 +1,17 @@
-import type { CatalogMetric, Stage } from "./types";
+import type { CatalogMetric, Connection, SchemaInfo, Stage } from "./types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8787";
 
-/** Stream pipeline stages from the API's SSE /ask endpoint. */
-export async function* askStream(question: string, signal?: AbortSignal): AsyncGenerator<Stage> {
+/** Stream pipeline stages from the API's SSE /ask endpoint for the chosen source. */
+export async function* askStream(
+  question: string,
+  connectionId?: string,
+  signal?: AbortSignal,
+): AsyncGenerator<Stage> {
   const res = await fetch(`${API_URL}/ask`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, connectionId }),
     signal,
   });
   if (!res.ok || !res.body) {
@@ -37,4 +41,17 @@ export async function fetchMetrics(): Promise<CatalogMetric[]> {
   if (!res.ok) throw new Error(`metrics failed: ${res.status}`);
   const body = (await res.json()) as { metrics: CatalogMetric[] };
   return body.metrics;
+}
+
+export async function fetchConnections(): Promise<Connection[]> {
+  const res = await fetch(`${API_URL}/connections`);
+  if (!res.ok) throw new Error(`connections failed: ${res.status}`);
+  const body = (await res.json()) as { connections: Connection[] };
+  return body.connections;
+}
+
+export async function fetchSchema(connectionId: string): Promise<SchemaInfo> {
+  const res = await fetch(`${API_URL}/connections/${connectionId}/schema`);
+  if (!res.ok) throw new Error(`schema failed: ${res.status}`);
+  return (await res.json()) as SchemaInfo;
 }
