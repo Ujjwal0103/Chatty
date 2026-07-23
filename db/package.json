@@ -6,6 +6,7 @@
   "scripts": {
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
+    "seed:app": "tsx src/seed-app.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

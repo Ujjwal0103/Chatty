@@ -13,6 +13,7 @@
     "test": "pnpm -r test",
     "db:migrate": "pnpm --filter @chatty/db migrate",
     "db:seed": "pnpm --filter @chatty/db seed",
+    "db:seed:app": "pnpm --filter @chatty/db seed:app",
     "eval": "pnpm --filter @chatty/eval eval",
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
