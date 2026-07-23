@@ -56,6 +56,16 @@ function connString(conn: DbConnection): string {
   return conn.config.connectionString ?? config.databaseUrlRo;
 }
 
+/** Introspect a connection's schema for display in the UI. */
+export async function describeConnection(
+  conn: DbConnection,
+): Promise<{ schemaName: string; tables: Array<{ name: string; columns: string[] }> }> {
+  const schemaName = conn.config.schema ?? "public";
+  const pool = poolFor(connString(conn));
+  const tables = await introspectSchema(pool, schemaName);
+  return { schemaName, tables: tables.map((t) => ({ name: t.name, columns: t.columns.map((c) => c.name) })) };
+}
+
 export async function* answerGeneric(question: string, conn: DbConnection): AsyncGenerator<Stage> {
   const { validateSql } = await import("@chatty/shared");
   try {

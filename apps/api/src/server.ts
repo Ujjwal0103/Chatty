@@ -3,7 +3,7 @@ import { catalogDimensions, catalogMetrics } from "@chatty/semantic-layer";
 import { closePools, rwPool } from "@chatty/shared";
 import Fastify from "fastify";
 import { answer } from "./engine.js";
-import { answerGeneric, type DbConnection } from "./generic.js";
+import { answerGeneric, describeConnection, type DbConnection } from "./generic.js";
 import { closeRedis } from "./redis.js";
 
 const PORT = Number(process.env.API_PORT ?? 8787);
@@ -36,6 +36,13 @@ app.get("/history", async () => {
        FROM query_history ORDER BY created_at DESC LIMIT 50`,
   );
   return { history: rows };
+});
+
+// Introspected schema for a generic (BYO-Postgres) source, for the UI's table list.
+app.get<{ Params: { id: string } }>("/connections/:id/schema", async (req) => {
+  const conn = await loadConnection(req.params.id);
+  if (!conn || conn.kind !== "postgres") return { schemaName: null, tables: [] };
+  return describeConnection({ id: conn.id, displayName: conn.display_name, config: conn.config });
 });
 
 interface ConnectionRow {
