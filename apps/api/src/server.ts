@@ -3,7 +3,7 @@ import { catalogDimensions, catalogMetrics } from "@chatty/semantic-layer";
 import { closePools, rwPool } from "@chatty/shared";
 import Fastify from "fastify";
 import { answer } from "./engine.js";
-import { answerGeneric, describeConnection, type DbConnection } from "./generic.js";
+import { answerGeneric, describeConnection, testConnection, type DbConnection } from "./generic.js";
 import { closeRedis } from "./redis.js";
 
 const PORT = Number(process.env.API_PORT ?? 8787);
@@ -36,6 +36,53 @@ app.get("/history", async () => {
        FROM query_history ORDER BY created_at DESC LIMIT 50`,
   );
   return { history: rows };
+});
+
+// Register a BYO-Postgres source. We test + introspect before saving so a bad
+// connection fails at connect time, not at query time. The connection string is
+// stored in `config` (never returned by the API) — use a READ-ONLY credential;
+// for production, encrypt at rest / use a secrets manager.
+app.post<{ Body: { displayName?: string; connectionString?: string; schema?: string; kind?: string } }>(
+  "/connect",
+  async (req, reply) => {
+    const { displayName, connectionString, schema, kind } = req.body ?? {};
+    if ((kind ?? "postgres") !== "postgres") {
+      return reply.code(400).send({ error: "Only Postgres connections are supported today." });
+    }
+    if (!connectionString || !/^postgres(ql)?:\/\//i.test(connectionString)) {
+      return reply.code(400).send({ error: "A valid postgres:// connection string is required." });
+    }
+    const schemaName = (schema ?? "public").trim() || "public";
+
+    let tableCount: number;
+    try {
+      tableCount = await testConnection(connectionString, schemaName);
+    } catch (err) {
+      return reply
+        .code(400)
+        .send({ error: `Could not connect or introspect: ${err instanceof Error ? err.message : String(err)}` });
+    }
+    if (tableCount === 0) {
+      return reply.code(400).send({ error: `No readable tables found in schema '${schemaName}'.` });
+    }
+
+    const name = displayName?.trim() || "Company Postgres";
+    const { rows } = await rwPool().query<{ id: string }>(
+      `INSERT INTO connections (kind, display_name, config, last_synced_at)
+       VALUES ('postgres', $1, $2::jsonb, now()) RETURNING id`,
+      [name, JSON.stringify({ schema: schemaName, connectionString })],
+    );
+    return {
+      connection: { id: rows[0]!.id, kind: "postgres", display_name: name, mode: "generic" },
+      tables: tableCount,
+    };
+  },
+);
+
+// Remove a source.
+app.delete<{ Params: { id: string } }>("/connections/:id", async (req) => {
+  await rwPool().query(`DELETE FROM connections WHERE id = $1`, [req.params.id]);
+  return { ok: true };
 });
 
 // Introspected schema for a generic (BYO-Postgres) source, for the UI's table list.

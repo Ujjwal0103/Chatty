@@ -56,6 +56,21 @@ function connString(conn: DbConnection): string {
   return conn.config.connectionString ?? config.databaseUrlRo;
 }
 
+/**
+ * Test a candidate BYO-Postgres connection by connecting and introspecting the
+ * given schema. Returns the table count. Uses a throwaway pool with a connect
+ * timeout so a bad host fails fast; never logs the connection string.
+ */
+export async function testConnection(connectionString: string, schemaName: string): Promise<number> {
+  const pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 8000 });
+  try {
+    const tables = await introspectSchema(pool, schemaName);
+    return tables.length;
+  } finally {
+    await pool.end();
+  }
+}
+
 /** Introspect a connection's schema for display in the UI. */
 export async function describeConnection(
   conn: DbConnection,
