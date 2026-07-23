@@ -55,3 +55,22 @@ export async function fetchSchema(connectionId: string): Promise<SchemaInfo> {
   if (!res.ok) throw new Error(`schema failed: ${res.status}`);
   return (await res.json()) as SchemaInfo;
 }
+
+export async function connectSource(input: {
+  displayName: string;
+  connectionString: string;
+  schema: string;
+}): Promise<Connection> {
+  const res = await fetch(`${API_URL}/connect`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const body = (await res.json()) as { connection?: Connection; error?: string };
+  if (!res.ok || !body.connection) throw new Error(body.error ?? `connect failed: ${res.status}`);
+  return body.connection;
+}
+
+export async function deleteConnection(id: string): Promise<void> {
+  await fetch(`${API_URL}/connections/${id}`, { method: "DELETE" });
+}

@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { askStream, fetchConnections, fetchMetrics, fetchSchema } from "../lib/api";
+import {
+  askStream,
+  connectSource,
+  deleteConnection,
+  fetchConnections,
+  fetchMetrics,
+  fetchSchema,
+} from "../lib/api";
 import { formatValue, metricLabel } from "../lib/format";
 import type { AnswerEnvelope, CatalogMetric, Connection, SchemaInfo, Stage } from "../lib/types";
 import { ProvenanceCard } from "../components/ProvenanceCard";
@@ -84,10 +91,21 @@ export default function Page() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showConnect, setShowConnect] = useState(false);
+  const [form, setForm] = useState({ displayName: "", connectionString: "", schema: "public" });
+  const [connectErr, setConnectErr] = useState("");
+  const [connecting, setConnecting] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
 
   const active = useMemo(() => connections.find((c) => c.id === activeId), [connections, activeId]);
   const isGeneric = active?.mode === "generic";
+
+  async function reloadConnections(selectId?: string): Promise<void> {
+    const c = await fetchConnections();
+    setConnections(c);
+    if (selectId) setActiveId(selectId);
+    else if (c.length > 0 && !c.some((x) => x.id === activeId)) setActiveId(c[0]!.id);
+  }
 
   useEffect(() => {
     fetchMetrics().then(setMetrics).catch(() => setMetrics([]));
@@ -98,6 +116,34 @@ export default function Page() {
       })
       .catch(() => setConnections([]));
   }, []);
+
+  async function submitConnect(): Promise<void> {
+    setConnectErr("");
+    if (!form.connectionString.trim()) {
+      setConnectErr("Enter a read-only postgres:// connection string.");
+      return;
+    }
+    setConnecting(true);
+    try {
+      const conn = await connectSource({
+        displayName: form.displayName.trim() || "Company Postgres",
+        connectionString: form.connectionString.trim(),
+        schema: form.schema.trim() || "public",
+      });
+      await reloadConnections(conn.id);
+      setShowConnect(false);
+      setForm({ displayName: "", connectionString: "", schema: "public" });
+    } catch (err) {
+      setConnectErr(err instanceof Error ? err.message : String(err));
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function removeSource(id: string): Promise<void> {
+    await deleteConnection(id);
+    await reloadConnections();
+  }
 
   useEffect(() => {
     if (active?.mode === "generic") {
@@ -146,15 +192,46 @@ export default function Page() {
 
         <div className="section-title">Sources</div>
         {connections.map((c) => (
-          <button
-            key={c.id}
-            className={`source ${c.id === activeId ? "active" : ""}`}
-            onClick={() => setActiveId(c.id)}
-          >
-            <span className="name">{c.display_name}</span>
-            <span className={`mode ${c.mode}`}>{c.mode === "finance" ? "metrics" : "SQL"}</span>
-          </button>
+          <div key={c.id} className={`source ${c.id === activeId ? "active" : ""}`}>
+            <button className="source-main" onClick={() => setActiveId(c.id)}>
+              <span className="name">{c.display_name}</span>
+              <span className={`mode ${c.mode}`}>{c.mode === "finance" ? "metrics" : "SQL"}</span>
+            </button>
+            {c.kind === "postgres" ? (
+              <button className="remove" title="Remove source" onClick={() => removeSource(c.id)}>
+                ×
+              </button>
+            ) : null}
+          </div>
         ))}
+
+        <button className="connect-toggle" onClick={() => setShowConnect((v) => !v)}>
+          {showConnect ? "Cancel" : "+ Connect Postgres"}
+        </button>
+        {showConnect ? (
+          <div className="connect-form">
+            <input
+              placeholder="Display name (e.g. Prod DB)"
+              value={form.displayName}
+              onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+            />
+            <input
+              placeholder="postgres://readonly:…@host:5432/db"
+              value={form.connectionString}
+              onChange={(e) => setForm({ ...form, connectionString: e.target.value })}
+            />
+            <input
+              placeholder="schema (e.g. public)"
+              value={form.schema}
+              onChange={(e) => setForm({ ...form, schema: e.target.value })}
+            />
+            <p className="hint">Use a read-only credential. Queries run read-only regardless.</p>
+            {connectErr ? <p className="error small">{connectErr}</p> : null}
+            <button className="connect-submit" onClick={submitConnect} disabled={connecting}>
+              {connecting ? "Connecting…" : "Connect & introspect"}
+            </button>
+          </div>
+        ) : null}
 
         {isGeneric ? (
           <>
